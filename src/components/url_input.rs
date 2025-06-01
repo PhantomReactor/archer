@@ -1,0 +1,52 @@
+use crossterm::event::KeyEvent;
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::{Color, Style},
+    widgets::{Block, BorderType, Widget},
+};
+use tui_textarea::{Input, Key, TextArea};
+
+#[derive(Debug)]
+pub struct UrlInput {
+    textarea: TextArea<'static>,
+}
+
+impl UrlInput {
+    pub fn new() -> Self {
+        let mut textarea = TextArea::new(vec![]);
+        // textarea.set_style(Style::default().bg(Color::Rgb(14, 18, 40)));
+        textarea.set_cursor_line_style(Style::default().fg(Color::White));
+        textarea.set_cursor_style(Style::default().fg(Color::White));
+        textarea.set_placeholder_text("Enter URL here");
+        let block = Block::bordered()
+            .style(Style::default().fg(Color::Rgb(93, 93, 93)))
+            .border_type(BorderType::Rounded);
+        textarea.set_block(block);
+        Self { textarea }
+    }
+
+    pub fn handle_key(&mut self, key: KeyEvent) -> bool {
+        match key.into() {
+            Input {
+                key: Key::Char('m'),
+                ..
+            }
+            | Input {
+                key: Key::Enter, ..
+            } => false,
+            input => {
+                self.textarea.input(input);
+                true
+            }
+        }
+    }
+
+    pub fn get_input(self) -> String {
+        self.textarea.lines()[0].clone()
+    }
+
+    pub fn render(&self, area: Rect, buf: &mut Buffer) {
+        self.textarea.render(area, buf);
+    }
+}
