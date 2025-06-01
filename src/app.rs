@@ -3,6 +3,7 @@ use crate::components::method_input::MethodInput;
 use crate::components::request_input::RequestInput;
 use crate::components::url_input::UrlInput;
 use crate::event::{AppEvent, Event, EventHandler};
+use color_eyre::eyre::Ok;
 use ratatui::{
     crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
     DefaultTerminal,
@@ -74,9 +75,45 @@ impl App {
             }
             KeyCode::Right => self.events.send(AppEvent::Increment),
             KeyCode::Left => self.events.send(AppEvent::Decrement),
+            KeyCode::Char('r') if key_event.modifiers == KeyModifiers::CONTROL => {
+                if !self.request_input.is_focused() {
+                    self.unfocus();
+                    self.request_input.focus();
+                }
+                return Ok(());
+            }
+            KeyCode::Char('g') if key_event.modifiers == KeyModifiers::CONTROL => {
+                if !self.method_input.is_focused() {
+                    self.unfocus();
+                    self.method_input.focus();
+                }
+                return Ok(());
+            }
+            KeyCode::Char('u') if key_event.modifiers == KeyModifiers::CONTROL => {
+                if !self.url_input.is_focused() {
+                    self.unfocus();
+                    self.url_input.focus();
+                }
+                return Ok(());
+            }
+
+            KeyCode::Char('e') if key_event.modifiers == KeyModifiers::CONTROL => {
+                self.show_explorer = !self.show_explorer;
+                if !self.collections.is_focused() {
+                    self.unfocus();
+                    self.collections.focus();
+                }
+                return Ok(());
+            }
             // Handle method input
             _ => {
-                self.method_input.handle_key(key_event);
+                if self.method_input.is_focused() {
+                    self.method_input.handle_key(key_event);
+                } else if self.url_input.is_focused() {
+                    self.url_input.handle_key(key_event);
+                } else {
+                    self.request_input.handle_key(key_event);
+                }
             }
         }
         Ok(())
@@ -99,5 +136,12 @@ impl App {
 
     pub fn decrement_counter(&mut self) {
         self.counter = self.counter.saturating_sub(1);
+    }
+
+    pub fn unfocus(&mut self) {
+        self.request_input.unfocus();
+        self.url_input.unfocus();
+        self.method_input.unfocus();
+        self.collections.unfocus();
     }
 }

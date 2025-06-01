@@ -5,11 +5,12 @@ use ratatui::{
     style::{Color, Style},
     widgets::{Block, BorderType, Widget},
 };
-use tui_textarea::{Input, Key, TextArea};
+use tui_textarea::{CursorMove, Input, Key, TextArea};
 
 #[derive(Debug)]
 pub struct UrlInput {
     textarea: TextArea<'static>,
+    focused: bool,
 }
 
 impl UrlInput {
@@ -23,7 +24,10 @@ impl UrlInput {
             .style(Style::default().fg(Color::Rgb(93, 93, 93)))
             .border_type(BorderType::Rounded);
         textarea.set_block(block);
-        Self { textarea }
+        Self {
+            textarea,
+            focused: false,
+        }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
@@ -48,5 +52,22 @@ impl UrlInput {
 
     pub fn render(&self, area: Rect, buf: &mut Buffer) {
         self.textarea.render(area, buf);
+    }
+
+    pub fn focus(&mut self) {
+        self.textarea
+            .set_cursor_style(Style::default().bg(Color::Gray));
+        self.textarea.move_cursor(CursorMove::End);
+        self.focused = true;
+    }
+
+    pub fn unfocus(&mut self) {
+        self.textarea
+            .set_cursor_style(Style::default().fg(Color::White));
+        self.focused = false;
+    }
+
+    pub fn is_focused(&self) -> bool {
+        self.focused
     }
 }

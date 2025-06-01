@@ -8,6 +8,7 @@ use ratatui::{
 #[derive(Debug)]
 pub struct Collections {
     items: List<'static>,
+    focused: bool,
 }
 
 impl Collections {
@@ -16,7 +17,10 @@ impl Collections {
         let mut_list = list.set_style(Style::default().bg(Color::Rgb(38, 38, 38)));
         let block = Block::default().border_type(BorderType::Rounded);
         let styled_list = mut_list.block(block);
-        Self { items: styled_list }
+        Self {
+            items: styled_list,
+            focused: true,
+        }
     }
 
     pub fn handle_keys(self) {}
@@ -24,5 +28,17 @@ impl Collections {
     pub fn render(&self, area: Rect, buf: &mut Buffer) {
         let mut state = ListState::default();
         StatefulWidget::render(&self.items, area, buf, &mut state);
+    }
+
+    pub fn focus(&mut self) {
+        self.focused = true;
+    }
+
+    pub fn unfocus(&mut self) {
+        self.focused = false;
+    }
+
+    pub fn is_focused(&self) -> bool {
+        self.focused
     }
 }

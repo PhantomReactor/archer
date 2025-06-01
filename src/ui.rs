@@ -28,7 +28,6 @@ impl Widget for &App {
             .constraints(constraints)
             .split(area);
         let request_layout = Layout::default()
-            .direction(Direction::Vertical)
             .horizontal_margin(1)
             .constraints([Constraint::Length(3), Constraint::Fill(1)])
             .split(app_layout[1]);
