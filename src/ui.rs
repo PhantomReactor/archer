@@ -1,67 +1,126 @@
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style, Stylize},
+    style::{Style, Stylize},
     widgets::{Block, BorderType, Borders, Paragraph, Widget},
 };
+use std::rc::Rc;
 
 use crate::app::App;
+use crate::themes::Theme;
+
+fn create_app_layout(area: Rect, show_explorer: bool, show_response: bool) -> Rc<[Rect]> {
+    let mut explorer = 0;
+    let mut response = 0;
+    if show_explorer {
+        explorer = 20;
+    }
+    if show_response {
+        response = 20;
+    }
+    let constraints = [
+        Constraint::Percentage(explorer),
+        Constraint::Percentage(100 - explorer - response),
+        Constraint::Percentage(response),
+    ];
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(constraints)
+        .split(area)
+}
+
+fn create_request_layout(area: Rect) -> Rc<[Rect]> {
+    Layout::default()
+        .horizontal_margin(1)
+        .constraints([Constraint::Length(3), Constraint::Fill(1)])
+        .split(area)
+}
+
+fn create_method_url_layout(area: Rect) -> Rc<[Rect]> {
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(10), Constraint::Min(1)])
+        .split(area)
+}
+
+fn create_content_layout(area: Rect) -> Rc<[Rect]> {
+    Layout::default()
+        .vertical_margin(1)
+        .constraints([Constraint::Length(2), Constraint::Fill(1)])
+        .split(area)
+}
+
+fn create_options_layout(area: Rect) -> Rc<[Rect]> {
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Length(6),
+            Constraint::Length(2),
+            Constraint::Length(7),
+            Constraint::Length(2),
+            Constraint::Length(4),
+        ])
+        .split(area)
+}
+
+fn create_body_layout(area: Rect) -> Rc<[Rect]> {
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .horizontal_margin(2)
+        .constraints([Constraint::Percentage(100)])
+        .split(area)
+}
+
+fn render_options(
+    options_layout: &Rc<[Rect]>,
+    current_focus: usize,
+    buf: &mut Buffer,
+    theme: &Theme,
+) {
+    for i in 1..6 {
+        if i % 2 == 0 {
+            continue;
+        }
+        let req_type = match i {
+            1 => "Params",
+            3 => "Headers",
+            5 => "Body",
+            _ => "",
+        };
+
+        let color = if ((i + 1) / 2) - 1 == current_focus {
+            theme.accent
+        } else {
+            theme.foreground
+        };
+
+        Paragraph::new(req_type)
+            .fg(color)
+            .block(
+                Block::default()
+                    .borders(Borders::BOTTOM)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(theme.border)),
+            )
+            .render(options_layout[i], buf);
+    }
+}
 
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let mut explorer = 0;
-        let mut response = 0;
-        if self.show_explorer {
-            explorer = 20;
-        }
-        if self.show_response {
-            response = 20;
-        }
-        let constraints = [
-            Constraint::Percentage(explorer),
-            Constraint::Percentage(100 - explorer - response),
-            Constraint::Percentage(response),
-        ];
-
-        let app_layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(constraints)
-            .split(area);
-
-        let request_layout = Layout::default()
-            .horizontal_margin(1)
-            .constraints([Constraint::Length(3), Constraint::Fill(1)])
-            .split(app_layout[1]);
-
-        let method_url = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(10), Constraint::Min(1)])
-            .split(request_layout[0]);
-
-        let l = Layout::default()
-            .vertical_margin(1)
-            .constraints([Constraint::Length(2), Constraint::Fill(1)])
-            .split(request_layout[1]);
-        let options_layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(2),
-                Constraint::Length(6),
-                Constraint::Length(2),
-                Constraint::Length(7),
-                Constraint::Length(2),
-                Constraint::Length(4),
-            ])
-            .split(l[0]);
-        let body_layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .horizontal_margin(2)
-            .constraints([Constraint::Percentage(100)])
-            .split(l[1]);
-        let paragraph = Paragraph::default().bg(Color::Rgb(33, 33, 33)).centered();
+        let theme = self.theme;
+        let app_layout = create_app_layout(area, self.show_explorer, self.show_response);
+        let request_layout = create_request_layout(app_layout[1]);
+        let method_url = create_method_url_layout(request_layout[0]);
+        let content_layout = create_content_layout(request_layout[1]);
+        let options_layout = create_options_layout(content_layout[0]);
+        let body_layout = create_body_layout(content_layout[1]);
+        let paragraph = Paragraph::default().bg(theme.background).centered();
 
         let block = Block::bordered()
-            .style(Style::default().fg(Color::Rgb(93, 93, 93)))
+            .style(Style::default().fg(theme.border))
             .border_type(BorderType::Rounded);
 
         paragraph.render(area, buf);
@@ -72,47 +131,13 @@ impl Widget for &App {
                 Block::default()
                     .borders(Borders::BOTTOM)
                     .border_type(BorderType::Rounded)
-                    .style(Style::default().fg(Color::Rgb(93, 93, 93))),
+                    .style(Style::default().fg(theme.border)),
             )
-            .render(l[0], buf);
+            .render(content_layout[0], buf);
         Paragraph::default()
             .block(block)
             .render(request_layout[1], buf);
-        for i in 1..6 {
-            if i % 2 == 0 {
-                continue;
-            }
-            let mut req_type: String = "".to_string();
-            if i == 1 {
-                req_type = "Params".to_string();
-            } else if i == 3 {
-                req_type = "Headers".to_string();
-            } else if i == 5 {
-                req_type = "Body".to_string();
-            }
-
-            if ((i + 1) / 2) - 1 == self.current_focus {
-                Paragraph::new(req_type)
-                    .fg(Color::Rgb(250, 178, 131))
-                    .block(
-                        Block::default()
-                            .borders(Borders::BOTTOM)
-                            .border_type(BorderType::Rounded)
-                            .border_style(Style::default().fg(Color::Rgb(93, 93, 93))),
-                    )
-                    .render(options_layout[i], buf);
-            } else {
-                Paragraph::new(req_type)
-                    .fg(Color::White)
-                    .block(
-                        Block::default()
-                            .borders(Borders::BOTTOM)
-                            .border_type(BorderType::Rounded)
-                            .border_style(Style::default().fg(Color::Rgb(93, 93, 93))),
-                    )
-                    .render(options_layout[i], buf);
-            }
-        }
+        render_options(&options_layout, self.current_focus, buf, theme);
         self.request_input[self.current_focus].render(body_layout[0], buf);
         if self.show_explorer {
             self.collections.render(app_layout[0], buf);

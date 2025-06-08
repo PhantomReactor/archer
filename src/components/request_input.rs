@@ -1,6 +1,5 @@
 use core::fmt;
 
-use color_eyre::owo_colors::OwoColorize;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -8,6 +7,8 @@ use ratatui::{
     widgets::{Block, Widget},
 };
 use tui_textarea::{CursorMove, Input, Key, Scrolling, TextArea};
+
+use crate::themes::Theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -72,22 +73,23 @@ pub struct Vim {
     block: Block<'static>,
     pub textarea: TextArea<'static>,
     focused: bool,
+    theme: &'static Theme,
 }
 
 impl Vim {
-    pub fn new(mode: Mode) -> Self {
+    pub fn new(mode: Mode, theme: &'static Theme) -> Self {
         let mut textarea = TextArea::default();
-        textarea.set_cursor_line_style(Style::default().fg(Color::White));
-        textarea.set_style(Style::default().fg(Color::White));
-        textarea.set_cursor_style(Style::default().bg(Color::Rgb(250, 178, 131)));
-
-        textarea.set_selection_style(Style::default().bg(Color::Rgb(69, 64, 61)));
+        textarea.set_cursor_line_style(Style::default().fg(theme.foreground));
+        textarea.set_style(Style::default().fg(theme.foreground));
+        textarea.set_cursor_style(Style::default().bg(theme.cursor));
+        textarea.set_selection_style(Style::default().bg(theme.selection));
         Self {
             mode,
             pending: Input::default(),
             block: Block::default(),
             textarea: textarea,
             focused: false,
+            theme,
         }
     }
 
@@ -98,6 +100,7 @@ impl Vim {
             block: self.block,
             textarea: self.textarea,
             focused: self.focused,
+            theme: self.theme,
         }
     }
 
@@ -417,18 +420,15 @@ impl Vim {
     }
 
     pub fn focus(&mut self) {
-        self.textarea.set_cursor_style(
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::Rgb(250, 178, 131)),
-        );
+        self.textarea
+            .set_cursor_style(Style::default().fg(Color::Black).bg(self.theme.cursor));
         self.textarea.move_cursor(CursorMove::End);
         self.focused = true;
     }
 
     pub fn unfocus(&mut self) {
         self.textarea
-            .set_cursor_style(Style::default().fg(Color::White));
+            .set_cursor_style(Style::default().fg(self.theme.foreground));
         self.focused = false;
     }
 

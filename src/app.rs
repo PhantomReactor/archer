@@ -5,16 +5,15 @@ use crate::components::method_input::MethodInput;
 use crate::components::request_input::{Mode, Transition, Vim};
 use crate::components::url_input::UrlInput;
 use crate::event::{AppEvent, Event, EventHandler};
+use crate::themes::{Theme, ARCHER};
 use color_eyre::eyre::Ok;
 use ratatui::{
-    DefaultTerminal,
     crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
+    DefaultTerminal,
 };
 
-/// Application.
 #[derive(Debug)]
 pub struct App {
-    /// Is the application running?
     pub show_explorer: bool,
     pub show_response: bool,
     pub running: bool,
@@ -25,36 +24,37 @@ pub struct App {
     pub request_input: Vec<Vim>,
     pub collections: Collections,
     pub current_focus: usize,
+    pub theme: &'static Theme,
 }
 
 impl Default for App {
     fn default() -> Self {
+        let theme = &ARCHER;
         let mut request: Vec<Vim> = Vec::new();
         for _ in 0..5 {
-            request.push(Vim::new(Mode::Normal));
+            request.push(Vim::new(Mode::Normal, theme));
         }
         Self {
             running: true,
             counter: 0,
             events: EventHandler::new(),
-            method_input: MethodInput::new(),
-            url_input: UrlInput::new(),
+            method_input: MethodInput::new(theme),
+            url_input: UrlInput::new(theme),
             request_input: request,
-            collections: Collections::new(),
+            collections: Collections::new(theme),
             show_explorer: false,
             show_response: false,
             current_focus: 0,
+            theme,
         }
     }
 }
 
 impl App {
-    /// Constructs a new instance of [`App`].
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Run the application's main loop.
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
         while self.running {
             terminal.draw(|frame| frame.render_widget(&self, frame.area()))?;
@@ -74,7 +74,6 @@ impl App {
         Ok(())
     }
 
-    /// Handles the key events and updates the state of [`App`].
     pub fn handle_key_events(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
         match key_event.code {
             KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
@@ -129,7 +128,6 @@ impl App {
                 }
                 return Ok(());
             }
-            // Handle method input
             _ => {
                 if self.method_input.is_focused() {
                     self.method_input.handle_key(key_event);
@@ -141,7 +139,7 @@ impl App {
                     let transition = vim_clone.transition(input);
                     match transition {
                         Transition::Mode(mode) if vim_clone.mode != mode => {
-                            let mut new_vim = Vim::new(mode);
+                            let mut new_vim = Vim::new(mode, self.theme);
                             new_vim.textarea = vim_clone.textarea;
 
                             self.request_input[self.current_focus] = new_vim;
@@ -162,13 +160,8 @@ impl App {
         Ok(())
     }
 
-    /// Handles the tick event of the terminal.
-    ///
-    /// The tick event is where you can update the state of your application with any logic that
-    /// needs to be updated at a fixed frame rate. E.g. polling a server, updating an animation.
     pub fn tick(&self) {}
 
-    /// Set running to false to quit the application.
     pub fn quit(&mut self) {
         self.running = false;
     }

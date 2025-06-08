@@ -2,30 +2,33 @@ use crossterm::event::KeyEvent;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     widgets::{Block, BorderType, Widget},
 };
 use tui_textarea::{CursorMove, Input, Key, TextArea};
+
+use crate::themes::Theme;
 
 #[derive(Debug)]
 pub struct MethodInput {
     textarea: TextArea<'static>,
     focused: bool,
+    theme: &'static Theme,
 }
 
 impl MethodInput {
-    pub fn new() -> Self {
+    pub fn new(theme: &'static Theme) -> Self {
         let mut textarea = TextArea::new(vec!["GET".to_string()]);
-        textarea.set_cursor_line_style(Style::default().fg(Color::White));
-        textarea.set_cursor_style(Style::default().fg(Color::White));
-        // textarea.set_style(Style::default().bg(Color::Rgb(93, 93, 93)));
+        textarea.set_cursor_line_style(Style::default().fg(theme.foreground));
+        textarea.set_cursor_style(Style::default().fg(theme.foreground));
         let block = Block::bordered()
-            .style(Style::default().fg(Color::Rgb(93, 93, 93)))
+            .style(Style::default().fg(theme.border))
             .border_type(BorderType::Rounded);
         textarea.set_block(block);
         Self {
             textarea,
             focused: false,
+            theme,
         }
     }
 
@@ -57,14 +60,14 @@ impl MethodInput {
 
     pub fn focus(&mut self) {
         self.textarea
-            .set_cursor_style(Style::default().bg(Color::Rgb(250, 178, 255)));
+            .set_cursor_style(Style::default().bg(self.theme.method_cursor));
         self.textarea.move_cursor(CursorMove::End);
         self.focused = true;
     }
 
     pub fn unfocus(&mut self) {
         self.textarea
-            .set_cursor_style(Style::default().fg(Color::White));
+            .set_cursor_style(Style::default().fg(self.theme.foreground));
         self.focused = false;
     }
 

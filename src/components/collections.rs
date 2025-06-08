@@ -1,9 +1,11 @@
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Style, Styled},
+    style::{Style, Styled},
     widgets::{Block, BorderType, List, ListState, StatefulWidget},
 };
+
+use crate::themes::Theme;
 
 #[derive(Debug)]
 pub struct Collections {
@@ -12,9 +14,9 @@ pub struct Collections {
 }
 
 impl Collections {
-    pub fn new() -> Self {
+    pub fn new(theme: &Theme) -> Self {
         let list = List::new(vec!["test".to_string()]);
-        let mut_list = list.set_style(Style::default().bg(Color::Rgb(38, 38, 38)));
+        let mut_list = list.set_style(Style::default().bg(theme.list_background));
         let block = Block::default().border_type(BorderType::Rounded);
         let styled_list = mut_list.block(block);
         Self {
