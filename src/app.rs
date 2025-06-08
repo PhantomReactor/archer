@@ -25,6 +25,7 @@ pub struct App {
     pub collections: Collections,
     pub current_focus: usize,
     pub theme: &'static Theme,
+    pub show_popup: bool,
 }
 
 impl Default for App {
@@ -46,6 +47,7 @@ impl Default for App {
             show_response: false,
             current_focus: 0,
             theme,
+            show_popup: false,
         }
     }
 }
@@ -95,6 +97,10 @@ impl App {
                     self.unfocus();
                     self.request_input[self.current_focus].focus();
                 }
+                return Ok(());
+            }
+            KeyCode::Char('t') if key_event.modifiers == KeyModifiers::CONTROL => {
+                self.show_popup = !self.show_popup;
                 return Ok(());
             }
             KeyCode::Char('h') if key_event.modifiers == KeyModifiers::CONTROL => {

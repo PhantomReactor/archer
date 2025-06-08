@@ -1,8 +1,8 @@
 use ratatui::{
     buffer::Buffer,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Flex, Layout, Rect},
     style::{Style, Stylize},
-    widgets::{Block, BorderType, Borders, Paragraph, Widget},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget},
 };
 use std::rc::Rc;
 
@@ -142,5 +142,20 @@ impl Widget for &App {
         if self.show_explorer {
             self.collections.render(app_layout[0], buf);
         }
+
+        if self.show_popup {
+            let block = Block::bordered().title("Popup");
+            let area = popup_area(area, 60, 20);
+            Clear.render(area, buf); //this clears out the background
+            block.render(area, buf);
+        }
     }
+}
+
+fn popup_area(area: Rect, percent_x: u16, percent_y: u16) -> Rect {
+    let vertical = Layout::vertical([Constraint::Percentage(percent_y)]).flex(Flex::Center);
+    let horizontal = Layout::horizontal([Constraint::Percentage(percent_x)]).flex(Flex::Center);
+    let [area] = vertical.areas(area);
+    let [area] = horizontal.areas(area);
+    area
 }
