@@ -57,7 +57,7 @@ impl MethodInput {
 
     pub fn focus(&mut self) {
         self.textarea
-            .set_cursor_style(Style::default().bg(Color::Gray));
+            .set_cursor_style(Style::default().bg(Color::Rgb(250, 178, 255)));
         self.textarea.move_cursor(CursorMove::End);
         self.focused = true;
     }

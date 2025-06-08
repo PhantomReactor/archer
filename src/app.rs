@@ -1,12 +1,14 @@
+use std::usize;
+
 use crate::components::collections::Collections;
 use crate::components::method_input::MethodInput;
-use crate::components::request_input::RequestInput;
+use crate::components::request_input::{Mode, Transition, Vim};
 use crate::components::url_input::UrlInput;
 use crate::event::{AppEvent, Event, EventHandler};
 use color_eyre::eyre::Ok;
 use ratatui::{
-    crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
     DefaultTerminal,
+    crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
 };
 
 /// Application.
@@ -20,22 +22,28 @@ pub struct App {
     pub events: EventHandler,
     pub method_input: MethodInput,
     pub url_input: UrlInput,
-    pub request_input: RequestInput,
+    pub request_input: Vec<Vim>,
     pub collections: Collections,
+    pub current_focus: usize,
 }
 
 impl Default for App {
     fn default() -> Self {
+        let mut request: Vec<Vim> = Vec::new();
+        for _ in 0..5 {
+            request.push(Vim::new(Mode::Normal));
+        }
         Self {
             running: true,
             counter: 0,
             events: EventHandler::new(),
             method_input: MethodInput::new(),
             url_input: UrlInput::new(),
-            request_input: RequestInput::new(),
+            request_input: request,
             collections: Collections::new(),
             show_explorer: false,
             show_response: false,
+            current_focus: 0,
         }
     }
 }
@@ -69,16 +77,32 @@ impl App {
     /// Handles the key events and updates the state of [`App`].
     pub fn handle_key_events(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
         match key_event.code {
-            KeyCode::Esc | KeyCode::Char('q') => self.events.send(AppEvent::Quit),
             KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
                 self.events.send(AppEvent::Quit)
             }
             KeyCode::Right => self.events.send(AppEvent::Increment),
             KeyCode::Left => self.events.send(AppEvent::Decrement),
             KeyCode::Char('r') if key_event.modifiers == KeyModifiers::CONTROL => {
-                if !self.request_input.is_focused() {
+                self.current_focus = 2;
+                if !self.request_input[self.current_focus].is_focused() {
                     self.unfocus();
-                    self.request_input.focus();
+                    self.request_input[self.current_focus].focus();
+                }
+                return Ok(());
+            }
+            KeyCode::Char('p') if key_event.modifiers == KeyModifiers::CONTROL => {
+                self.current_focus = 0;
+                if !self.request_input[self.current_focus].is_focused() {
+                    self.unfocus();
+                    self.request_input[self.current_focus].focus();
+                }
+                return Ok(());
+            }
+            KeyCode::Char('h') if key_event.modifiers == KeyModifiers::CONTROL => {
+                self.current_focus = 1;
+                if !self.request_input[self.current_focus].is_focused() {
+                    self.unfocus();
+                    self.request_input[self.current_focus].focus();
                 }
                 return Ok(());
             }
@@ -112,7 +136,26 @@ impl App {
                 } else if self.url_input.is_focused() {
                     self.url_input.handle_key(key_event);
                 } else {
-                    self.request_input.handle_key(key_event);
+                    let input = key_event.into();
+                    let mut vim_clone = self.request_input[self.current_focus].clone();
+                    let transition = vim_clone.transition(input);
+                    match transition {
+                        Transition::Mode(mode) if vim_clone.mode != mode => {
+                            let mut new_vim = Vim::new(mode);
+                            new_vim.textarea = vim_clone.textarea;
+
+                            self.request_input[self.current_focus] = new_vim;
+                        }
+                        Transition::Nop | Transition::Mode(_) => {
+                            self.request_input[self.current_focus] = vim_clone;
+                        }
+                        Transition::Pending(input) => {
+                            self.request_input[self.current_focus] = vim_clone.with_pending(input);
+                        }
+                        Transition::Quit => {
+                            self.request_input[self.current_focus].unfocus();
+                        }
+                    }
                 }
             }
         }
@@ -139,7 +182,7 @@ impl App {
     }
 
     pub fn unfocus(&mut self) {
-        self.request_input.unfocus();
+        self.request_input[self.current_focus].unfocus();
         self.url_input.unfocus();
         self.method_input.unfocus();
         self.collections.unfocus();
