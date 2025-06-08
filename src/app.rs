@@ -1,8 +1,8 @@
 use std::usize;
 
 use crate::components::collections::Collections;
+use crate::components::editor::Editor;
 use crate::components::method_input::MethodInput;
-use crate::components::request_input::{Mode, Transition, Vim};
 use crate::components::url_input::UrlInput;
 use crate::event::{AppEvent, Event, EventHandler};
 use crate::themes::{Theme, ARCHER};
@@ -12,7 +12,6 @@ use ratatui::{
     DefaultTerminal,
 };
 
-#[derive(Debug)]
 pub struct App {
     pub show_explorer: bool,
     pub show_response: bool,
@@ -21,19 +20,20 @@ pub struct App {
     pub events: EventHandler,
     pub method_input: MethodInput,
     pub url_input: UrlInput,
-    pub request_input: Vec<Vim>,
     pub collections: Collections,
     pub current_focus: usize,
     pub theme: &'static Theme,
     pub show_popup: bool,
+    pub editors: Vec<Editor>,
+    pub response: Editor,
 }
 
 impl Default for App {
     fn default() -> Self {
         let theme = &ARCHER;
-        let mut request: Vec<Vim> = Vec::new();
+        let mut editors: Vec<Editor> = Vec::new();
         for _ in 0..5 {
-            request.push(Vim::new(Mode::Normal, theme));
+            editors.push(Editor::default());
         }
         Self {
             running: true,
@@ -41,13 +41,14 @@ impl Default for App {
             events: EventHandler::new(),
             method_input: MethodInput::new(theme),
             url_input: UrlInput::new(theme),
-            request_input: request,
             collections: Collections::new(theme),
             show_explorer: false,
             show_response: false,
             current_focus: 0,
             theme,
             show_popup: false,
+            editors,
+            response: Editor::default(),
         }
     }
 }
@@ -59,7 +60,7 @@ impl App {
 
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
         while self.running {
-            terminal.draw(|frame| frame.render_widget(&self, frame.area()))?;
+            terminal.draw(|frame| frame.render_widget(&mut self, frame.area()))?;
             match self.events.next().await? {
                 Event::Tick => self.tick(),
                 Event::Crossterm(event) => match event {
@@ -85,17 +86,25 @@ impl App {
             KeyCode::Left => self.events.send(AppEvent::Decrement),
             KeyCode::Char('r') if key_event.modifiers == KeyModifiers::CONTROL => {
                 self.current_focus = 2;
-                if !self.request_input[self.current_focus].is_focused() {
+                if !self.editors[self.current_focus].is_focused() {
                     self.unfocus();
-                    self.request_input[self.current_focus].focus();
+                    self.editors[self.current_focus].focus();
+                }
+                return Ok(());
+            }
+            KeyCode::Char('k') if key_event.modifiers == KeyModifiers::CONTROL => {
+                self.show_response = !self.show_response;
+                if !self.response.is_focused() {
+                    self.unfocus();
+                    self.response.focus();
                 }
                 return Ok(());
             }
             KeyCode::Char('p') if key_event.modifiers == KeyModifiers::CONTROL => {
                 self.current_focus = 0;
-                if !self.request_input[self.current_focus].is_focused() {
+                if !self.editors[self.current_focus].is_focused() {
                     self.unfocus();
-                    self.request_input[self.current_focus].focus();
+                    self.editors[self.current_focus].focus();
                 }
                 return Ok(());
             }
@@ -105,9 +114,9 @@ impl App {
             }
             KeyCode::Char('h') if key_event.modifiers == KeyModifiers::CONTROL => {
                 self.current_focus = 1;
-                if !self.request_input[self.current_focus].is_focused() {
+                if !self.editors[self.current_focus].is_focused() {
                     self.unfocus();
-                    self.request_input[self.current_focus].focus();
+                    self.editors[self.current_focus].focus();
                 }
                 return Ok(());
             }
@@ -139,27 +148,12 @@ impl App {
                     self.method_input.handle_key(key_event);
                 } else if self.url_input.is_focused() {
                     self.url_input.handle_key(key_event);
-                } else {
-                    let input = key_event.into();
-                    let mut vim_clone = self.request_input[self.current_focus].clone();
-                    let transition = vim_clone.transition(input);
-                    match transition {
-                        Transition::Mode(mode) if vim_clone.mode != mode => {
-                            let mut new_vim = Vim::new(mode, self.theme);
-                            new_vim.textarea = vim_clone.textarea;
-
-                            self.request_input[self.current_focus] = new_vim;
-                        }
-                        Transition::Nop | Transition::Mode(_) => {
-                            self.request_input[self.current_focus] = vim_clone;
-                        }
-                        Transition::Pending(input) => {
-                            self.request_input[self.current_focus] = vim_clone.with_pending(input);
-                        }
-                        Transition::Quit => {
-                            self.request_input[self.current_focus].unfocus();
-                        }
+                } else if self.response.is_focused() {
+                    if key_event.code != KeyCode::Char('i') {
+                        self.response.handle_key(key_event);
                     }
+                } else {
+                    self.editors[self.current_focus].handle_key(key_event);
                 }
             }
         }
@@ -181,7 +175,8 @@ impl App {
     }
 
     pub fn unfocus(&mut self) {
-        self.request_input[self.current_focus].unfocus();
+        self.editors[self.current_focus].unfocus();
+        self.response.unfocus();
         self.url_input.unfocus();
         self.method_input.unfocus();
         self.collections.unfocus();

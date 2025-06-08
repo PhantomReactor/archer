@@ -16,12 +16,12 @@ fn create_app_layout(area: Rect, show_explorer: bool, show_response: bool) -> Rc
         explorer = 20;
     }
     if show_response {
-        response = 20;
+        response = (0.5 * ((100 - explorer) as f64)) as i32;
     }
     let constraints = [
         Constraint::Percentage(explorer),
-        Constraint::Percentage(100 - explorer - response),
-        Constraint::Percentage(response),
+        Constraint::Percentage(100 - explorer - response as u16),
+        Constraint::Percentage(response as u16),
     ];
 
     Layout::default()
@@ -73,6 +73,18 @@ fn create_body_layout(area: Rect) -> Rc<[Rect]> {
         .split(area)
 }
 
+fn create_response_layout(area: Rect) -> Rc<[Rect]> {
+    let res = Layout::default()
+        .vertical_margin(1)
+        .constraints([Constraint::Fill(1)])
+        .split(area);
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .horizontal_margin(2)
+        .constraints([Constraint::Fill(1)])
+        .split(res[0])
+}
+
 fn render_options(
     options_layout: &Rc<[Rect]>,
     current_focus: usize,
@@ -108,7 +120,7 @@ fn render_options(
     }
 }
 
-impl Widget for &App {
+impl Widget for &mut App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let theme = self.theme;
         let app_layout = create_app_layout(area, self.show_explorer, self.show_response);
@@ -117,11 +129,8 @@ impl Widget for &App {
         let content_layout = create_content_layout(request_layout[1]);
         let options_layout = create_options_layout(content_layout[0]);
         let body_layout = create_body_layout(content_layout[1]);
+        let response_layout = create_response_layout(app_layout[2]);
         let paragraph = Paragraph::default().bg(theme.background).centered();
-
-        let block = Block::bordered()
-            .style(Style::default().fg(theme.border))
-            .border_type(BorderType::Rounded);
 
         paragraph.render(area, buf);
         self.method_input.render(method_url[0], buf);
@@ -135,18 +144,32 @@ impl Widget for &App {
             )
             .render(content_layout[0], buf);
         Paragraph::default()
-            .block(block)
+            .block(
+                Block::bordered()
+                    .style(Style::default().fg(theme.border))
+                    .border_type(BorderType::Rounded),
+            )
             .render(request_layout[1], buf);
         render_options(&options_layout, self.current_focus, buf, theme);
-        self.request_input[self.current_focus].render(body_layout[0], buf);
+        self.editors[self.current_focus].render(body_layout[0], buf, self.theme);
         if self.show_explorer {
             self.collections.render(app_layout[0], buf);
+        }
+        if self.show_response {
+            Paragraph::default()
+                .block(
+                    Block::bordered()
+                        .style(Style::default().fg(theme.border))
+                        .border_type(BorderType::Rounded),
+                )
+                .render(app_layout[2], buf);
+            self.response.render(response_layout[0], buf, theme);
         }
 
         if self.show_popup {
             let block = Block::bordered().title("Popup");
             let area = popup_area(area, 60, 20);
-            Clear.render(area, buf); //this clears out the background
+            Clear.render(area, buf);
             block.render(area, buf);
         }
     }
