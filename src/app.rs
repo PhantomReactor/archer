@@ -148,6 +148,9 @@ impl App {
                     self.method_input.handle_key(key_event);
                 } else if self.url_input.is_focused() {
                     self.url_input.handle_key(key_event);
+                } else if self.collections.is_focused() {
+                    let event = ratatui::crossterm::event::Event::Key(key_event);
+                    self.collections.handle_keys(&event);
                 } else if self.response.is_focused() {
                     if key_event.code != KeyCode::Char('i') {
                         self.response.handle_key(key_event);

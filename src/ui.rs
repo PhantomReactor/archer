@@ -13,7 +13,7 @@ fn create_app_layout(area: Rect, show_explorer: bool, show_response: bool) -> Rc
     let mut explorer = 0;
     let mut response = 0;
     if show_explorer {
-        explorer = 20;
+        explorer = 18;
     }
     if show_response {
         response = (0.5 * ((100 - explorer) as f64)) as i32;
@@ -153,7 +153,7 @@ impl Widget for &mut App {
         render_options(&options_layout, self.current_focus, buf, theme);
         self.editors[self.current_focus].render(body_layout[0], buf, self.theme);
         if self.show_explorer {
-            self.collections.render(app_layout[0], buf);
+            self.collections.render(app_layout[0], buf, theme);
         }
         if self.show_response {
             Paragraph::default()
