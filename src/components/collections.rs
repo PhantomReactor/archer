@@ -307,4 +307,21 @@ impl Collections {
     pub fn is_focused(&self) -> bool {
         self.focused
     }
+
+    pub fn get_selected_file(&self) -> Option<&FileItem> {
+        if let Some(selected) = self.state.selected() {
+            self.items.get(selected)
+        } else {
+            None
+        }
+    }
+
+    pub fn refresh(&mut self) {
+        let root_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        self.items.clear();
+        self.load_directory(&root_path, 0);
+        if !self.items.is_empty() && self.state.selected().is_none() {
+            self.state.select(Some(0));
+        }
+    }
 }

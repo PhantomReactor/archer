@@ -54,6 +54,10 @@ impl MethodInput {
         self.textarea.lines()[0].clone()
     }
 
+    pub fn get_text(&self) -> String {
+        self.textarea.lines()[0].clone()
+    }
+
     pub fn render(&self, area: Rect, buf: &mut Buffer) {
         self.textarea.render(area, buf);
     }
@@ -73,5 +77,15 @@ impl MethodInput {
 
     pub fn is_focused(&self) -> bool {
         self.focused
+    }
+
+    pub fn set_text(&mut self, text: String) {
+        self.textarea = TextArea::new(vec![text]);
+        self.textarea.set_cursor_line_style(Style::default().fg(self.theme.foreground));
+        self.textarea.set_cursor_style(Style::default().fg(self.theme.foreground));
+        let block = Block::bordered()
+            .style(Style::default().fg(self.theme.border))
+            .border_type(BorderType::Rounded);
+        self.textarea.set_block(block);
     }
 }

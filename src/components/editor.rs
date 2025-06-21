@@ -1,5 +1,5 @@
 use edtui::{
-    EditorEventHandler, EditorState, EditorStatusLine, EditorTheme, EditorView, SyntaxHighlighter,
+    EditorEventHandler, EditorState, EditorStatusLine, EditorTheme, EditorView, SyntaxHighlighter, Lines,
 };
 use ratatui::prelude::Widget;
 use ratatui::style::Color;
@@ -67,5 +67,20 @@ impl Editor {
             .theme(mut_theme)
             .syntax_highlighter(Some(syntax_highlighter))
             .render(area, buf);
+    }
+
+    pub fn get_text(&self) -> String {
+        self.editor_state.lines.iter_row()
+            .map(|line| line.iter().collect::<String>())
+            .collect::<Vec<String>>()
+            .join("\n")
+    }
+
+    pub fn set_text(&mut self, text: String) {
+        self.editor_state.lines = Lines::from(text.as_str());
+    }
+
+    pub fn clear(&mut self) {
+        self.editor_state.lines = Lines::from("");
     }
 }

@@ -37,6 +37,16 @@ pub enum AppEvent {
     Decrement,
     /// Quit the application.
     Quit,
+    /// HTTP response received.
+    HttpResponse(HttpResponseData),
+}
+
+#[derive(Clone, Debug)]
+pub struct HttpResponseData {
+    pub status: Option<String>,
+    pub response_time: Option<u128>,
+    pub body: String,
+    pub headers: String,
 }
 
 /// Terminal event handler.
@@ -81,6 +91,11 @@ impl EventHandler {
         // Ignore the result as the reciever cannot be dropped while this struct still has a
         // reference to it
         let _ = self.sender.send(Event::App(app_event));
+    }
+
+    /// Get a clone of the sender for use in background tasks.
+    pub fn get_sender(&self) -> mpsc::UnboundedSender<Event> {
+        self.sender.clone()
     }
 }
 

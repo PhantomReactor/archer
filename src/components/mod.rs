@@ -1,5 +1,9 @@
 pub mod collections;
+pub mod curl_popup;
+pub mod directory_picker;
 pub mod editor;
 pub mod method_input;
 pub mod request_input;
+pub mod save_popup;
+pub mod search_popup;
 pub mod url_input;
