@@ -2,8 +2,9 @@ use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
     style::{Style, Stylize},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, StatefulWidget},
 };
+use ratatui_image::StatefulImage;
 use std::rc::Rc;
 
 use crate::app::App;
@@ -319,14 +320,52 @@ impl Widget for &mut App {
                 self.spinner_state,
             );
             match self.current_response_focus {
-                0 => self.response.render(response_body_layout[0], buf, theme),
+                0 => {
+                    if self.response_is_image && self.response_image.is_some() && self.image_display_enabled {
+                        // Try to update and render image, but fall back to text if it fails
+                        if let Err(_) = self.update_image_area(response_body_layout[0]) {
+                            self.response.render(response_body_layout[0], buf, theme);
+                        } else if let Some(ref mut image_protocol) = self.response_image {
+                            let image = StatefulImage::default();
+                            if let Err(_) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                image.render(response_body_layout[0], buf, image_protocol);
+                            })) {
+                                // If image rendering panics, fall back to text
+                                self.response.render(response_body_layout[0], buf, theme);
+                            }
+                        } else {
+                            self.response.render(response_body_layout[0], buf, theme);
+                        }
+                    } else {
+                        self.response.render(response_body_layout[0], buf, theme);
+                    }
+                }
                 1 => self
                     .response_headers
                     .render(response_body_layout[0], buf, theme),
                 2 => self
                     .response_cookies
                     .render(response_body_layout[0], buf, theme),
-                _ => self.response.render(response_body_layout[0], buf, theme),
+                _ => {
+                    if self.response_is_image && self.response_image.is_some() && self.image_display_enabled {
+                        // Try to update and render image, but fall back to text if it fails
+                        if let Err(_) = self.update_image_area(response_body_layout[0]) {
+                            self.response.render(response_body_layout[0], buf, theme);
+                        } else if let Some(ref mut image_protocol) = self.response_image {
+                            let image = StatefulImage::default();
+                            if let Err(_) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                image.render(response_body_layout[0], buf, image_protocol);
+                            })) {
+                                // If image rendering panics, fall back to text
+                                self.response.render(response_body_layout[0], buf, theme);
+                            }
+                        } else {
+                            self.response.render(response_body_layout[0], buf, theme);
+                        }
+                    } else {
+                        self.response.render(response_body_layout[0], buf, theme);
+                    }
+                }
             }
         }
 

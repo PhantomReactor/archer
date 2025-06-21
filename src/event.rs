@@ -47,6 +47,9 @@ pub struct HttpResponseData {
     pub response_time: Option<u128>,
     pub body: String,
     pub headers: String,
+    pub content_type: Option<String>,
+    pub is_image: bool,
+    pub image_data: Option<Vec<u8>>,
 }
 
 /// Terminal event handler.

@@ -1,3 +1,4 @@
+use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::collections::HashMap;
 use std::result::Result::Ok;
 use std::time::Instant;
@@ -62,6 +63,11 @@ pub struct App {
     pub is_renaming: bool,
     pub rename_input: String,
     pub save_error: Option<String>,
+    pub image_picker: Option<Picker>,
+    pub response_image: Option<StatefulProtocol>,
+    pub response_is_image: bool,
+    pub response_image_data: Option<Vec<u8>>,
+    pub image_display_enabled: bool,
 }
 
 impl Default for App {
@@ -105,6 +111,11 @@ impl Default for App {
             is_renaming: false,
             rename_input: String::new(),
             save_error: None,
+            image_picker: None,
+            response_image: None,
+            response_is_image: false,
+            response_image_data: None,
+            image_display_enabled: true,
         }
     }
 }
@@ -279,6 +290,17 @@ impl App {
                     self.unfocus();
                     self.current_response_focus = 0;
                     self.response.focus();
+                }
+                return Ok(());
+            }
+            KeyCode::Char('i') if key_event.modifiers == KeyModifiers::CONTROL => {
+                self.image_display_enabled = !self.image_display_enabled;
+                if self.response_is_image && !self.image_display_enabled {
+                    self.response_is_image = false;
+                    self.response_image = None;
+                    if let Some(image_data) = &self.response_image_data {
+                        self.response.set_text(format!("Image response ({} bytes) - Image display disabled (Ctrl+I to enable)", image_data.len()));
+                    }
                 }
                 return Ok(());
             }
@@ -466,6 +488,9 @@ impl App {
         self.response_cookies.clear();
         self.response_status = None;
         self.response_time = None;
+        self.response_image = None;
+        self.response_is_image = false;
+        self.response_image_data = None;
 
         self.request_name = "Untitled-Request".to_string();
 
@@ -488,6 +513,9 @@ impl App {
         self.response_cookies.clear();
         self.response_status = None;
         self.response_time = None;
+        self.response_image = None;
+        self.response_is_image = false;
+        self.response_image_data = None;
 
         self.show_response = false;
     }
@@ -573,31 +601,64 @@ impl App {
                     let status_str = Some(format!("{}", status.as_u16()));
 
                     let mut headers_text = String::new();
+                    let mut content_type = None;
                     for (name, value) in response.headers() {
-                        headers_text.push_str(&format!(
-                            "{}: {}\n",
-                            name,
-                            value.to_str().unwrap_or("")
-                        ));
+                        let header_value = value.to_str().unwrap_or("");
+                        if name.as_str().to_lowercase() == "content-type" {
+                            content_type = Some(header_value.to_string());
+                        }
+                        headers_text.push_str(&format!("{}: {}\n", name, header_value));
                     }
 
-                    let body = match response.text().await {
-                        Ok(body) => {
-                            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&body)
-                            {
-                                serde_json::to_string_pretty(&json_value).unwrap_or(body)
-                            } else {
-                                body
-                            }
-                        }
-                        Err(e) => format!("Error reading response body: {}", e),
-                    };
+                    let is_image = content_type
+                        .as_ref()
+                        .map(|ct| ct.starts_with("image/"))
+                        .unwrap_or(false);
 
-                    HttpResponseData {
-                        status: status_str,
-                        response_time: Some(elapsed.as_millis()),
-                        body,
-                        headers: headers_text,
+                    if is_image {
+                        match response.bytes().await {
+                            Ok(bytes) => HttpResponseData {
+                                status: status_str,
+                                response_time: Some(elapsed.as_millis()),
+                                body: format!("Image ({} bytes)", bytes.len()),
+                                headers: headers_text,
+                                content_type,
+                                is_image: true,
+                                image_data: Some(bytes.to_vec()),
+                            },
+                            Err(e) => HttpResponseData {
+                                status: status_str,
+                                response_time: Some(elapsed.as_millis()),
+                                body: format!("Error reading image data: {}", e),
+                                headers: headers_text,
+                                content_type,
+                                is_image: false,
+                                image_data: None,
+                            },
+                        }
+                    } else {
+                        let body = match response.text().await {
+                            Ok(body) => {
+                                if let Ok(json_value) =
+                                    serde_json::from_str::<serde_json::Value>(&body)
+                                {
+                                    serde_json::to_string_pretty(&json_value).unwrap_or(body)
+                                } else {
+                                    body
+                                }
+                            }
+                            Err(e) => format!("Error reading response body: {}", e),
+                        };
+
+                        HttpResponseData {
+                            status: status_str,
+                            response_time: Some(elapsed.as_millis()),
+                            body,
+                            headers: headers_text,
+                            content_type,
+                            is_image: false,
+                            image_data: None,
+                        }
                     }
                 }
                 Err(e) => {
@@ -607,6 +668,9 @@ impl App {
                         response_time: Some(elapsed.as_millis()),
                         body: format!("Request failed: {}", e),
                         headers: String::new(),
+                        content_type: None,
+                        is_image: false,
+                        image_data: None,
                     }
                 }
             };
@@ -623,12 +687,103 @@ impl App {
         self.is_loading = false;
         self.response_status = response_data.status;
         self.response_time = response_data.response_time;
-        self.response.set_text(response_data.body);
         self.response_headers.set_text(response_data.headers);
+        self.response_is_image = response_data.is_image;
+
+        if response_data.is_image && self.image_display_enabled {
+            if let Some(image_data) = response_data.image_data {
+                // Check image size limit (5MB for display)
+                if image_data.len() > 5 * 1024 * 1024 {
+                    self.response.set_text(format!("Image too large ({} bytes). Maximum size for display is 5MB.", image_data.len()));
+                    self.response_is_image = false;
+                } else {
+                    self.response_image_data = Some(image_data.clone());
+                    // Try to setup image display, but don't block if it fails
+                    match self.setup_image_display(&image_data) {
+                        Ok(()) => {
+                            self.response.set_text(format!("Image loaded ({} bytes)", image_data.len()));
+                        }
+                        Err(e) => {
+                            self.response.set_text(format!("Error displaying image: {}. Disabling image display.", e));
+                            self.response_is_image = false;
+                            self.response_image = None;
+                            self.response_image_data = None;
+                            self.image_display_enabled = false; // Disable for this session
+                        }
+                    }
+                }
+            } else {
+                self.response.set_text(response_data.body);
+                self.response_is_image = false;
+            }
+        } else if response_data.is_image {
+            // Image display is disabled, show as text
+            self.response.set_text(format!("Image response ({} bytes) - Image display disabled", 
+                response_data.image_data.as_ref().map(|d| d.len()).unwrap_or(0)));
+            self.response_is_image = false;
+        } else {
+            self.response.set_text(response_data.body);
+            self.response_image = None;
+            self.response_image_data = None;
+        }
 
         self.unfocus();
         self.current_response_focus = 0;
         self.response.focus();
+    }
+
+    fn setup_image_display(&mut self, image_data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+        // Add size check
+        if image_data.len() > 5 * 1024 * 1024 {
+            return Err("Image too large for display".into());
+        }
+
+        if self.image_picker.is_none() {
+            // Use a timeout for picker initialization
+            match std::panic::catch_unwind(|| Picker::from_query_stdio()) {
+                Ok(Ok(picker)) => self.image_picker = Some(picker),
+                _ => return Err("Failed to initialize image picker".into()),
+            }
+        }
+
+        let picker = self.image_picker.as_mut().unwrap();
+        
+        // Add timeout for image loading
+        let dyn_img = match std::panic::catch_unwind(|| image::load_from_memory(image_data)) {
+            Ok(Ok(img)) => img,
+            _ => return Err("Failed to load image data".into()),
+        };
+
+        // Check image dimensions
+        if dyn_img.width() > 4000 || dyn_img.height() > 4000 {
+            return Err("Image dimensions too large".into());
+        }
+
+        let image_protocol = picker.new_resize_protocol(dyn_img);
+        self.response_image = Some(image_protocol);
+        Ok(())
+    }
+
+    pub fn update_image_area(
+        &mut self,
+        _area: ratatui::layout::Rect,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // Only process if image is not already processed
+        if self.response_image.is_none() {
+            if let Some(image_data) = &self.response_image_data {
+                if self.image_picker.is_none() {
+                    self.image_picker = Some(Picker::from_query_stdio()?);
+                }
+
+                let picker = self.image_picker.as_mut().unwrap();
+                let dyn_img = image::load_from_memory(image_data)?;
+
+                let image_protocol = picker.new_resize_protocol(dyn_img);
+
+                self.response_image = Some(image_protocol);
+            }
+        }
+        Ok(())
     }
 
     pub async fn save_renamed_request(&mut self) -> color_eyre::Result<()> {
