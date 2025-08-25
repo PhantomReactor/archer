@@ -321,19 +321,16 @@ impl Widget for &mut App {
             );
             match self.current_response_focus {
                 0 => {
-                    if self.response_is_image && self.response_image.is_some() && self.image_display_enabled {
-                        // Try to update and render image, but fall back to text if it fails
-                        if let Err(_) = self.update_image_area(response_body_layout[0]) {
-                            self.response.render(response_body_layout[0], buf, theme);
-                        } else if let Some(ref mut image_protocol) = self.response_image {
+                    if self.response_is_image && self.image_display_enabled {
+                        // Try to create image protocol if needed (should be fast now)
+                        let _ = self.update_image_area(response_body_layout[0]);
+                        
+                        // Now render the image if we have one ready
+                        if let Some(ref mut image_protocol) = self.response_image {
                             let image = StatefulImage::default();
-                            if let Err(_) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                image.render(response_body_layout[0], buf, image_protocol);
-                            })) {
-                                // If image rendering panics, fall back to text
-                                self.response.render(response_body_layout[0], buf, theme);
-                            }
+                            image.render(response_body_layout[0], buf, image_protocol);
                         } else {
+                            // Image not ready yet - just show text response
                             self.response.render(response_body_layout[0], buf, theme);
                         }
                     } else {
@@ -347,18 +344,14 @@ impl Widget for &mut App {
                     .response_cookies
                     .render(response_body_layout[0], buf, theme),
                 _ => {
-                    if self.response_is_image && self.response_image.is_some() && self.image_display_enabled {
-                        // Try to update and render image, but fall back to text if it fails
-                        if let Err(_) = self.update_image_area(response_body_layout[0]) {
-                            self.response.render(response_body_layout[0], buf, theme);
-                        } else if let Some(ref mut image_protocol) = self.response_image {
+                    if self.response_is_image && self.image_display_enabled {
+                        // Try to create image protocol if needed (should be fast now)
+                        let _ = self.update_image_area(response_body_layout[0]);
+                        
+                        // Now render the image if we have one
+                        if let Some(ref mut image_protocol) = self.response_image {
                             let image = StatefulImage::default();
-                            if let Err(_) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                image.render(response_body_layout[0], buf, image_protocol);
-                            })) {
-                                // If image rendering panics, fall back to text
-                                self.response.render(response_body_layout[0], buf, theme);
-                            }
+                            image.render(response_body_layout[0], buf, image_protocol);
                         } else {
                             self.response.render(response_body_layout[0], buf, theme);
                         }

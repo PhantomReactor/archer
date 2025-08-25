@@ -22,11 +22,11 @@ use crate::components::method_input::MethodInput;
 use crate::components::save_popup::SavePopup;
 use crate::components::search_popup::SearchPopup;
 use crate::components::url_input::UrlInput;
-use crate::event::{AppEvent, Event, EventHandler, HttpResponseData};
-use crate::themes::{ARCHER, Theme};
+use crate::event::{AppEvent, Event, EventHandler, HttpResponseData, ImageProcessedData};
+use crate::themes::{Theme, ARCHER};
 use ratatui::{
-    DefaultTerminal,
     crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
+    DefaultTerminal,
 };
 
 pub struct App {
@@ -67,7 +67,11 @@ pub struct App {
     pub response_image: Option<StatefulProtocol>,
     pub response_is_image: bool,
     pub response_image_data: Option<Vec<u8>>,
+    pub response_loaded_image: Option<image::DynamicImage>,
     pub image_display_enabled: bool,
+    pub cached_image_area: Option<ratatui::layout::Rect>,
+    pub image_needs_update: bool,
+    pub image_processing: bool,
 }
 
 impl Default for App {
@@ -111,11 +115,15 @@ impl Default for App {
             is_renaming: false,
             rename_input: String::new(),
             save_error: None,
-            image_picker: None,
+            image_picker: Self::try_initialize_picker(),
             response_image: None,
             response_is_image: false,
             response_image_data: None,
+            response_loaded_image: None,
             image_display_enabled: true,
+            cached_image_area: None,
+            image_needs_update: false,
+            image_processing: false,
         }
     }
 }
@@ -123,6 +131,13 @@ impl Default for App {
 impl App {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    fn try_initialize_picker() -> Option<Picker> {
+        match Picker::from_query_stdio() {
+            Ok(picker) => Some(picker),
+            Err(_) => None,
+        }
     }
 
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
@@ -143,6 +158,7 @@ impl App {
                     AppEvent::HttpResponse(response_data) => {
                         self.handle_http_response(response_data)
                     }
+                    AppEvent::ImageProcessed(image_data) => self.handle_image_processed(image_data),
                 },
             }
         }
@@ -185,6 +201,8 @@ impl App {
                     self.unfocus();
                     self.response.focus();
                 }
+                // Force image update on layout change
+                self.image_needs_update = true;
                 return Ok(());
             }
             KeyCode::Char('b') if key_event.modifiers == KeyModifiers::CONTROL => {
@@ -247,6 +265,8 @@ impl App {
                     self.unfocus();
                     self.collections.focus();
                 }
+                // Force image update on layout change
+                self.image_needs_update = true;
                 return Ok(());
             }
             KeyCode::Char('h') if key_event.modifiers == KeyModifiers::CONTROL => {
@@ -299,7 +319,10 @@ impl App {
                     self.response_is_image = false;
                     self.response_image = None;
                     if let Some(image_data) = &self.response_image_data {
-                        self.response.set_text(format!("Image response ({} bytes) - Image display disabled (Ctrl+I to enable)", image_data.len()));
+                        self.response.set_text(format!(
+                            "Image response ({} bytes) - Image display disabled (Ctrl+I to enable)",
+                            image_data.len()
+                        ));
                     }
                 }
                 return Ok(());
@@ -491,6 +514,10 @@ impl App {
         self.response_image = None;
         self.response_is_image = false;
         self.response_image_data = None;
+        self.response_loaded_image = None;
+        self.cached_image_area = None;
+        self.image_needs_update = false;
+        self.image_processing = false;
 
         self.request_name = "Untitled-Request".to_string();
 
@@ -516,6 +543,10 @@ impl App {
         self.response_image = None;
         self.response_is_image = false;
         self.response_image_data = None;
+        self.response_loaded_image = None;
+        self.cached_image_area = None;
+        self.image_needs_update = false;
+        self.image_processing = false;
 
         self.show_response = false;
     }
@@ -694,22 +725,35 @@ impl App {
             if let Some(image_data) = response_data.image_data {
                 // Check image size limit (5MB for display)
                 if image_data.len() > 5 * 1024 * 1024 {
-                    self.response.set_text(format!("Image too large ({} bytes). Maximum size for display is 5MB.", image_data.len()));
+                    self.response.set_text(format!(
+                        "Image too large ({} bytes). Maximum size for display is 5MB.",
+                        image_data.len()
+                    ));
                     self.response_is_image = false;
                 } else {
+                    // Process image immediately when response is received
                     self.response_image_data = Some(image_data.clone());
-                    // Try to setup image display, but don't block if it fails
-                    match self.setup_image_display(&image_data) {
-                        Ok(()) => {
-                            self.response.set_text(format!("Image loaded ({} bytes)", image_data.len()));
-                        }
-                        Err(e) => {
-                            self.response.set_text(format!("Error displaying image: {}. Disabling image display.", e));
-                            self.response_is_image = false;
-                            self.response_image = None;
-                            self.response_image_data = None;
-                            self.image_display_enabled = false; // Disable for this session
-                        }
+                    self.response_is_image = true;
+                    self.response_image = None; // Clear any existing image
+                    self.cached_image_area = None;
+                    self.image_processing = false;
+
+                    // Start background processing to keep UI responsive
+                    if self.image_picker.is_some() {
+                        self.response.set_text(format!(
+                            "Processing image ({} bytes)...",
+                            image_data.len()
+                        ));
+                        self.image_processing = true;
+                        self.image_needs_update = true;
+                        self.start_async_image_processing(image_data);
+                    } else {
+                        self.response.set_text(format!(
+                            "Image display unavailable - terminal doesn't support images ({} bytes)",
+                            image_data.len()
+                        ));
+                        self.response_is_image = false;
+                        self.image_needs_update = false;
                     }
                 }
             } else {
@@ -718,13 +762,20 @@ impl App {
             }
         } else if response_data.is_image {
             // Image display is disabled, show as text
-            self.response.set_text(format!("Image response ({} bytes) - Image display disabled", 
-                response_data.image_data.as_ref().map(|d| d.len()).unwrap_or(0)));
+            self.response.set_text(format!(
+                "Image response ({} bytes) - Image display disabled",
+                response_data
+                    .image_data
+                    .as_ref()
+                    .map(|d| d.len())
+                    .unwrap_or(0)
+            ));
             self.response_is_image = false;
         } else {
             self.response.set_text(response_data.body);
             self.response_image = None;
             self.response_image_data = None;
+        self.response_loaded_image = None;
         }
 
         self.unfocus();
@@ -733,56 +784,102 @@ impl App {
     }
 
     fn setup_image_display(&mut self, image_data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-        // Add size check
+        // This method handles the display setup - should be called sparingly
+
+        // Size check - allow up to 5MB
         if image_data.len() > 5 * 1024 * 1024 {
             return Err("Image too large for display".into());
         }
 
+        // Picker should already be initialized at startup
         if self.image_picker.is_none() {
-            // Use a timeout for picker initialization
-            match std::panic::catch_unwind(|| Picker::from_query_stdio()) {
-                Ok(Ok(picker)) => self.image_picker = Some(picker),
-                _ => return Err("Failed to initialize image picker".into()),
-            }
+            self.image_display_enabled = false;
+            return Err("Terminal doesn't support image display".into());
         }
 
         let picker = self.image_picker.as_mut().unwrap();
-        
-        // Add timeout for image loading
-        let dyn_img = match std::panic::catch_unwind(|| image::load_from_memory(image_data)) {
-            Ok(Ok(img)) => img,
-            _ => return Err("Failed to load image data".into()),
+
+        // Use a timeout for image operations to prevent hanging
+        let start_time = std::time::Instant::now();
+
+        // Load image with timeout protection
+        let dyn_img = match image::load_from_memory(image_data) {
+            Ok(img) => {
+                if start_time.elapsed().as_millis() > 10000 {
+                    // 1 second timeout
+                    return Err("Image loading took too long".into());
+                }
+                img
+            }
+            Err(e) => return Err(format!("Failed to load image: {}", e).into()),
         };
 
-        // Check image dimensions
-        if dyn_img.width() > 4000 || dyn_img.height() > 4000 {
-            return Err("Image dimensions too large".into());
+        // Create protocol with timeout protection
+        if start_time.elapsed().as_millis() > 20000 {
+            // 2 second total timeout
+            return Err("Image processing timeout".into());
         }
 
         let image_protocol = picker.new_resize_protocol(dyn_img);
         self.response_image = Some(image_protocol);
+        self.cached_image_area = None;
+        self.image_needs_update = false; // Mark as updated
+
         Ok(())
     }
 
     pub fn update_image_area(
         &mut self,
-        _area: ratatui::layout::Rect,
+        area: ratatui::layout::Rect,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // Only process if image is not already processed
-        if self.response_image.is_none() {
-            if let Some(image_data) = &self.response_image_data {
-                if self.image_picker.is_none() {
-                    self.image_picker = Some(Picker::from_query_stdio()?);
-                }
+        // Skip if image display is disabled, no image data, or still processing
+        if !self.image_display_enabled
+            || !self.response_is_image
+            || self.response_image_data.is_none()
+            || self.image_processing
+        {
+            return Ok(());
+        }
 
-                let picker = self.image_picker.as_mut().unwrap();
-                let dyn_img = image::load_from_memory(image_data)?;
+        // Only update if area changed significantly or image needs update
+        if let Some(cached_area) = self.cached_image_area {
+            let width_diff = (area.width as i32 - cached_area.width as i32).abs();
+            let height_diff = (area.height as i32 - cached_area.height as i32).abs();
 
-                let image_protocol = picker.new_resize_protocol(dyn_img);
-
-                self.response_image = Some(image_protocol);
+            // Only update if size changed by more than 5 characters/lines or forced update
+            if width_diff < 5 && height_diff < 2 && !self.image_needs_update {
+                return Ok(());
             }
         }
+
+        // Setup image display protocol only when we need to display it and don't have it processed yet
+        if self.image_needs_update && self.response_image.is_none() && !self.image_processing {
+            if let Some(loaded_img) = self.response_loaded_image.take() {
+                // Use the pre-loaded image to create protocol - should be fast
+                if let Some(picker) = self.image_picker.as_mut() {
+                    let image_protocol = picker.new_resize_protocol(loaded_img);
+                    self.response_image = Some(image_protocol);
+                    self.image_needs_update = false;
+                    if let Some(data) = &self.response_image_data {
+                        self.response.set_text(format!(
+                            "Image displayed ({} bytes)",
+                            data.len()
+                        ));
+                    }
+                } else {
+                    self.response.set_text("Image display unavailable".to_string());
+                    self.response_is_image = false;
+                    self.image_needs_update = false;
+                }
+            }
+        }
+
+        self.cached_image_area = Some(area);
+        // Only reset image_needs_update if we're not processing async
+        if !self.image_processing {
+            self.image_needs_update = false;
+        }
+        // Don't reset image_processing here - let the async handler do it
         Ok(())
     }
 
@@ -1160,5 +1257,91 @@ impl App {
         std::fs::write(file_path, curl_command)?;
 
         Ok(())
+    }
+
+    fn start_async_image_processing(&mut self, image_data: Vec<u8>) {
+        let sender = self.events.get_sender();
+
+        tokio::spawn(async move {
+            let result = tokio::task::spawn_blocking(move || {
+                // Do the heavy image loading in background thread
+                match image::load_from_memory(&image_data) {
+                    Ok(img) => {
+                        // Image loaded successfully, pass both data and loaded image
+                        ImageProcessedData {
+                            success: true,
+                            error_message: None,
+                            image_data: Some(image_data),
+                            loaded_image: Some(img),
+                        }
+                    }
+                    Err(e) => ImageProcessedData {
+                        success: false,
+                        error_message: Some(format!("Failed to load image: {}", e)),
+                        image_data: None,
+                        loaded_image: None,
+                    },
+                }
+            })
+            .await;
+
+            let image_result = match result {
+                Ok(data) => data,
+                Err(_) => ImageProcessedData {
+                    success: false,
+                    error_message: Some("Image processing timed out".to_string()),
+                    image_data: None,
+                    loaded_image: None,
+                },
+            };
+
+            let _ = sender.send(crate::event::Event::App(AppEvent::ImageProcessed(
+                image_result,
+            )));
+        });
+    }
+
+    fn handle_image_processed(&mut self, image_data: ImageProcessedData) {
+        self.image_processing = false;
+
+        if image_data.success {
+            // Image validation succeeded, now setup display immediately
+            if let Some(data) = image_data.image_data {
+                if let Some(loaded_img) = image_data.loaded_image {
+                    // Store the pre-loaded image - no blocking operations on main thread
+                    self.response_image_data = Some(data.clone());
+                    self.response_loaded_image = Some(loaded_img);
+                    self.response_is_image = true;
+                    self.response_image = None; // Will be created on first render
+                    self.image_needs_update = true; // Mark for protocol creation
+                    self.response.set_text(format!(
+                        "Image ready ({} bytes)",
+                        data.len()
+                    ));
+                } else {
+                    self.response.set_text("Image processing failed - no loaded image".to_string());
+                    self.response_is_image = false;
+                }
+            }
+        } else {
+            // Image processing failed
+            let error_msg = image_data
+                .error_message
+                .unwrap_or_else(|| "Unknown error".to_string());
+            if let Some(data) = &self.response_image_data {
+                self.response.set_text(format!(
+                    "Image processing failed: {} ({} bytes)",
+                    error_msg,
+                    data.len()
+                ));
+            } else {
+                self.response
+                    .set_text(format!("Image processing failed: {}", error_msg));
+            }
+            self.response_is_image = false;
+            self.response_image = None;
+            self.response_image_data = None;
+        self.response_loaded_image = None;
+        }
     }
 }

@@ -39,6 +39,8 @@ pub enum AppEvent {
     Quit,
     /// HTTP response received.
     HttpResponse(HttpResponseData),
+    /// Image processing completed.
+    ImageProcessed(ImageProcessedData),
 }
 
 #[derive(Clone, Debug)]
@@ -51,6 +53,16 @@ pub struct HttpResponseData {
     pub is_image: bool,
     pub image_data: Option<Vec<u8>>,
 }
+
+#[derive(Clone, Debug)]
+pub struct ImageProcessedData {
+    pub success: bool,
+    pub error_message: Option<String>,
+    pub image_data: Option<Vec<u8>>,
+    pub loaded_image: Option<image::DynamicImage>,
+}
+
+
 
 /// Terminal event handler.
 #[derive(Debug)]
